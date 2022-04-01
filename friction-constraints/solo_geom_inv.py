@@ -8,6 +8,12 @@ subject to  q = pin.integrate(q0, Dq)
             com_z >= avg(p_z) # com height higher than the average height of the feet
             f_i X (com_pos - p_i) == 0 # zero angular momentum at the com 
 
+            # The friction cone constraint can be one of the following:
+            0)  || f_t ||**2 <= mu * || f_n ||**2   # in this case mu = 1. f_t and f_n are the tangential and orthogonal component of the contact force
+            1)  || f @ k.T @ k - k @ k.T @ f ||**2 <= k.T @ f @ f.T @ k @k.T @ k    # k is the vector normal to the ground, while f is the vector of contact force
+            2)  || f.T @ k ||**2 >= (cos(alpha_k))**2 || f ||**2 * || k ||**2   # here alpha_k is the angle of the friction cone, and it's set to 45 degree,
+                                                                                which is equivalent to mu = 1
+
 '''
 
 import matplotlib
@@ -28,8 +34,7 @@ data = model.createData()
 
 # Either 0, 1 or 2 This is used to choose between the 3 methods 
 # They are equivalent, but the convergence is slower for some of them
-# By looking at the friction-constraint-comparison.ipynb notebook method 1 is the best in this case
-FRICTION_CONE_CONTRAINT_TYPE = 0 
+FRICTION_CONE_CONTRAINT_TYPE = 2 
 
 try:
     viz = pin.visualize.GepettoVisualizer(robot.model,robot.collision_model,robot.visual_model)
@@ -41,7 +46,6 @@ except:
 
 
 def ground(xy):
-    '''Ground altitude as a function of x-y position'''
     #return (xy[0]/5+xy[1]/8) * 0 # Flat terrain
     #return (xy[0]/5+xy[1]/8)
     #return xy[0]/1+xy[1]/1
@@ -114,17 +118,16 @@ for idx,force in zip(mx2sx.feet.keys(),fs):
 
     if (FRICTION_CONE_CONTRAINT_TYPE == 0):
             normal = perp/ casadi.norm_2(perp) 
-            fn = force.T@normal # This one is the magnitude of the normal component
-            ft = force - fn*normal # The force vector - the vector of the normal force
-            opti.subject_to(  ft.T@ft <= fn.T@fn  )   # force in friction cone (classic method)
+            fn = force.T@normal
+            ft = force - fn*normal
+            opti.subject_to(  ft.T@ft <= fn.T@fn  )
 
     elif (FRICTION_CONE_CONTRAINT_TYPE == 1):
-        #fp = (force@perp.T@perp- force.T @ perp@perp) # Should be equivalen
         fp = (force@perp.T@perp- perp@perp.T@force)
         opti.subject_to( fp.T@fp <=  (perp.T@force@force.T@perp@perp.T@perp))
 
     elif (FRICTION_CONE_CONTRAINT_TYPE == 2):
-        opti.subject_to( (force.T@perp)@perp.T@force >= 1/2 * (force.T@force)@(perp.T@perp)) 
+        opti.subject_to( (force.T@perp)@perp.T@force >= 1/2 * (force.T@force) * (perp.T@perp)) 
     else:
         raise ValueError("Please select a valid type of friction constraint")
 
